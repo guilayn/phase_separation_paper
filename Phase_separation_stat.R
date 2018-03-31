@@ -5,18 +5,19 @@
 #clean variables ###################
 rm(list=ls(all=TRUE)) 
 
-#### 0.PREP ####
-#0.1 loading libraries####
-libraries=c("Hmisc","colorspace","ggbiplot","corrplot","pvclust","mixOmics","RColorBrewer",
+#### 1.PREP ####
+#1.1 loading libraries####
+libraries=c("Hmisc","colorspace","corrplot","pvclust","mixOmics","RColorBrewer",
             "FactoMineR","missMDA","FactoMineR","ggplot2", "tidyr",
             "gplots","scales","grid","plyr","gridExtra",
             "devtools","factoextra","ggrepel", "viridis",
-            "WriteXLS","dendextend","cluster","reshape2","readxl","pvclust","pls")
+            "WriteXLS","dendextend","cluster","reshape2","readxl","pvclust","pls",
+            "sjstats")
 
 install_this=libraries[which(lapply(libraries, require, character.only = TRUE) == F)]
 install.packages(install_this)
 
-###0.2 ADJUST THE FOLDER###############################################################################################################################
+###1.2 ADJUST THE FOLDER###############################################################################################################################
 
 data_wd="C:/Users/JT5363/OneDrive - Suez Environnement/THESE-FELIPE/01_DIGESTATE_CHARAC/"
 file_name="2017_11 Phase separation compilation.xlsx"
@@ -34,8 +35,10 @@ dir.create(paste0(wd,"/PLS_EFF"))
 dir.create(paste0(wd,"/Linear_corr"))
 dir.create(paste0(wd,"/New_corr"))
 dir.create(paste0(wd,"/ERRORS"))
+dir.create(paste0(wd,"/Validation"))
 
-#### 0.3 Importing data ####
+
+#### 1.3 Importing data ####
 data_sep_raw = read_excel(path = paste0(data_wd,file_name),
                       sheet = "All data",
                       col_names = T,
@@ -95,12 +98,12 @@ data_equip_group = read_excel(path = paste0(data_wd,file_name),
                                      sheet = "Group_equip",
                                      col_names = T,
                                      na = "NA",
-                                     range="H1:J13")
+                                     range="A1:B65")
 data_feed_group = read_excel(path = paste0(data_wd,file_name),
                               sheet = "Group_feed",
                               col_names = T,
                               na = "NA",
-                              range="G1:I11")
+                              range="B1:C65")
 data_errors = read_excel(path = paste0(data_wd,file_name),
                              sheet = "ERRORS",
                              col_names = T,
@@ -113,6 +116,12 @@ data_efficiency = read_excel(path = paste0(data_wd,file_name),
                          na = "NA",
                          range="A1:Z65")
 
+data_validation = read_excel(path = paste0(data_wd,file_name),
+                             sheet = "Validation",
+                             col_names = T,
+                             na = "NA",
+                             range="A1:I249")
+
 list_distrib_data = list(All = data_distrib_clean,
                          Low = data_distrib_clean_low,
                          High = data_distrib_clean_high)
@@ -124,74 +133,125 @@ list_PCA_data = list(PCA_efficiency=data_efficiency)
                      #PCA_extra_DM=data_PCA_extra_raw_DM,
                      #PCA_extra_all_FM=data_PCA_extra_all_FM,
                       #PCA_extra_all_DM=data_PCA_extra_all_DM)
-#### 0.3.1 check that ids are different ####
+#### 1.3.1 check that ids are different ####
 table(colnames(data_sep_raw))
 table(colnames(data_distrib_clean))
 
-#### 0.3.2 check class of columns ####
+#### 1.3.2 check class of columns ####
 which(lapply(data_sep_raw, class) != "numeric")
-#### 0.3.3 force into given class ####
+#### 1.3.3 force into given class ####
 #selec_cols = c(x,x,x,x)
 #data_sep_raw[, selec_cols] <- sapply(data_sep_raw[, selec_cols], as.numeric)
 
-
-
-#### 1A. General plots ####
-#### 1A.1 Overal distribution ####
-# it's necessary to transform into a factor to keep original order in plots #
-
-for (i in 1:length(list_distrib_data)) {
-data_distrib = as.data.frame(list_distrib_data[[i]])
-name_data_distrib = names(list_distrib_data)[i]
-
-
-data_distrib_melt = melt(data_distrib, id = colnames(data_distrib)[1:4] )
-data_distrib_melt$value = 100*data_distrib_melt$value
-data_distrib_melt$Variable = factor(data_distrib_melt$Variable, rev(unique(data_distrib_melt$Variable)) )
-
-data_distrib_SF_av = data_distrib_melt[data_distrib_melt$variable == "SF av.",]
-data_distrib_SF_up = data_distrib_SF_av$value + data_distrib_melt[data_distrib_melt$variable == "SF sd",]$value
-data_distrib_SF_low = data_distrib_SF_av$value - data_distrib_melt[data_distrib_melt$variable == "SF sd",]$value
-data_distrib_LF_av = data_distrib_melt[data_distrib_melt$variable == "LF av.",]
-data_distrib_LF_up = data_distrib_LF_av$value + data_distrib_melt[data_distrib_melt$variable == "LF sd",]$value
-data_distrib_LF_low = data_distrib_LF_av$value - data_distrib_melt[data_distrib_melt$variable == "LF sd",]$value
-
-#### 1A.1 PLOT 1 (+PLOT 4) : OVERALL MASS BALANCES (AND BY EFF GROUPS) ####
-pdf(paste0(wd,"/Mass_distribution/",name_data_distrib,"_eff_mass_balance.pdf"))
-print(
-ggplot(data=data_distrib_melt, 
-       aes(x = Variable, y = value, fill = variable)) + 
-  geom_bar(data = data_distrib_SF_av, colour= "black",
-           stat = "identity",
-           position = "identity") +
-  geom_bar(data = data_distrib_LF_av, colour= "black",
-           stat = "identity",
-           position = "identity",
-           mapping = aes(y = -value)) +
-  geom_errorbar(data = data_distrib_LF_av,
-           mapping = aes(y = -data_distrib_LF_av$value,
-                         ymin = -data_distrib_LF_low,
-                         ymax = -data_distrib_LF_up)) +
-  geom_errorbar(data = data_distrib_SF_av,
-                 mapping = aes(y = data_distrib_SF_av$value,
-                               ymin = data_distrib_SF_low,
-                               ymax = data_distrib_SF_up)) +
-  geom_text(data = data_distrib_SF_av, label= data_distrib_SF_av$n,
-            mapping = aes (y = rep(99,nrow(data_distrib)))) +
-  geom_text(data = data_distrib_LF_av, label= round(data_distrib_LF_av$value,0),
-            mapping = aes (y = -0.5*data_distrib_LF_av$value), color = "white") +
-  geom_text(data = data_distrib_SF_av, label= round(data_distrib_SF_av$value,0),
-            mapping = aes (y = 0.5*data_distrib_SF_av$value), color = "white") +
-  coord_flip() +
-  scale_y_continuous(labels = abs, limits = c(-100,100)) +
-  scale_fill_manual(labels = c("Liquid Fra.","Solid Fra."),values = c("#6fb3ca","#ca866f")) + 
-  labs(title = paste0("Mass balance. Efficiency group: ",name_data_distrib),
-       y="Distribution (%)", x="Variable", fill="Fraction")
-)
-dev.off()
+#### VALIDATION OF METHOD ####
+sapply(data_validation, class)
+psf_index = which(data_validation$Fraction == "SF" & data_validation$Element == "FM") 
+data_xy_val_all = data.frame(x=data_validation$Calculated,y=data_validation$Given)
+data_xy_val_all = data.frame(x=data_validation$Calculated,y=data_validation$Given)
+data_xy_val_psf = data_xy_val_all[psf_index,]
+data_xy_val_all = data_xy_val_all[which(data_validation$Fraction == "SF"),]
+list_val = list(data_xy_val_psf,data_xy_val_all)
+data_xy_val_combined = rbind(data.frame(group="All",data_xy_val_all),data.frame(group="pSF,DM",data_xy_val_psf))
+for (i in 1:length(list_val)) {
+  a_to_zero = F
+  data_xytemp=list_val[[i]]
+  if (i == 1){
+    data_val_lincorr = lm_eqn_bydataframe(data_xytemp,data_xytemp[,1],data_xytemp[,2],a_to_0 = a_to_zero)
+    rownames(data_val_lincorr)="pSF,DM"
+    test=summary(lm(data=(data_xytemp),as.matrix(data_xytemp[,2]) ~ as.matrix(data_xytemp[,1])))
+  }
+  if (i > 1) {
+    data_val_lincorr = rbind(data_val_lincorr,lm_eqn_bydataframe(data_xytemp,data_xytemp[,1],data_xytemp[,2],a_to_0 = a_to_zero))
+    rownames(data_val_lincorr)[i]="all"
+  }
+  if (i == length(list_val)) {
+  
+  plot_val = ggplot(data=data_xy_val_combined, aes(x=data_xy_val_combined[,2], y=data_xy_val_combined[,3],shape=data_xy_val_combined$group, color=data_xy_val_combined$group))  +   
+    geom_point() +
+    stat_smooth(data=as.data.frame(data_xy_val_combined),method = "lm", formula= (y ~ x), show.legend = T) +
+    theme_bw() +
+    theme(legend.position = "bottom",legend.direction = "vertical")
+  pdf(paste0(wd,"/Validation/","Validation_corr.pdf"), width = 7, height = 4)
+  print(plot_val)
+  dev.off()
+  }
 }
+WriteXLS(data_val_lincorr,paste0(wd,"/Validation/","Validation_stat.xlsx"))
 
-#### 1A.2 PLOT 2: EFFICIENCY BOXPLOTS BY EQUIP, DM ONLY ####
+
+#### PLOT1: ERRORS ON MASS BALANCES ####
+data_errors_melt=melt(data_errors,id.vars = c("ID","Eff_group"))
+selected_err_var = c("VS","Ash","TN","TAN","Nor","P","K","S","Ca","Mg")
+data_errors_melt=data_errors_melt[data_errors_melt$variable %in% selected_err_var,]
+
+plot_errors=ggplot(data=data_errors_melt, 
+                   aes(x=variable, y=value))+ geom_boxplot()+#geom_dotplot(binaxis = "y",stackdir = "center") +
+  labs(title="Boxplots for mass balance errors",x="Variable",y="Errors") +
+  stat_summary(fun.data = mean.n, aes(shape="Mean"), colour = "black", geom="point") +
+  stat_summary(fun.data = give.n, geom = "text", aes(shape="Nb. of ind."), position=position_dodge(.9), fun.y = median,show.legend=FALSE, size=3 ) +
+  scale_shape_manual("", values=c("Mean"="x","Nb. of ind."="N")) +
+  geom_hline(yintercept=0.1, color="red",linetype="dashed") +
+  geom_hline(yintercept=-0.1, color="red",linetype="dashed") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+pdf(paste0(wd,"/ERRORS/","ERRORS_singleplot.pdf"), width = 7, height = 4)
+plot(plot_errors)
+dev.off()
+
+# AFTER: TESTANDO SE MEDIA ERROS SIGNIF MAIOR OU MENOR QUE QUE 0 ####
+for (j in 1:length(selected_err_var)) {
+  if (j == 1) {
+    table_wilcox_test_err = data.frame(0,0,0,0,0,0,0,0,0,0,0)
+    colnames(table_wilcox_test_err)=c("Var","Shapiro","Option","PV (t-test","PV (Wilcox)","N","median (%)","IQR (%)","mean (%)","SD (%)","SD by IQR")
+  }
+  i = selected_err_var[j]
+  print(i)
+  line_table = nrow(table_wilcox_test_err)
+  if (j > 1) {line_table = line_table+1}
+  table_wilcox_test_err[line_table,1] = i
+  table_wilcox_test_err[line_table+1,1] = i
+  table_wilcox_test_err[line_table+2,1] = i
+  
+  table_wilcox_test_err[line_table,3] = "Diff."
+  table_wilcox_test_err[line_table+1,3] = "Greater"
+  table_wilcox_test_err[line_table+2,3] = "Less"
+  data_err_temp = data_errors_melt[data_errors_melt$variable == i,4]
+  data_err_temp = data_err_temp[!is.na(data_err_temp)]
+  
+  shapiro_err_test=shapiro.test(data_err_temp)
+  qqnorm(data_err_temp,main = i) 
+  qqline(data_err_temp)
+  
+  ttest_err_diff = t.test(data_err_temp, mu = 0) #2sided is default
+  ttest_err_greater = t.test(data_err_temp, mu = 0, alternative= "greater")
+  ttest_err_less = t.test(data_err_temp, mu = 0, alternative = "less")
+  
+  wilcoxtest_err_diff = wilcox.test(data_err_temp, mu = 0) #2sided is default
+  wilcoxtest_err_greater = wilcox.test(data_err_temp, mu = 0, alternative= "greater")
+  wilcoxtest_err_less = wilcox.test(data_err_temp, mu = 0, alternative = "less")
+  
+  table_wilcox_test_err[line_table,2] = shapiro_err_test$p.value
+  
+  table_wilcox_test_err[line_table,4] = round(wilcoxtest_err_diff$p.value,3)
+  table_wilcox_test_err[line_table+1,4] = round(wilcoxtest_err_greater$p.value,3)
+  table_wilcox_test_err[line_table+2,4] = round(wilcoxtest_err_less$p.value,3)
+  
+  table_wilcox_test_err[line_table,5] = round(wilcoxtest_err_diff$p.value,3)
+  table_wilcox_test_err[line_table+1,5] = round(wilcoxtest_err_greater$p.value,3)
+  table_wilcox_test_err[line_table+2,5] = round(wilcoxtest_err_less$p.value,3)
+  
+  table_wilcox_test_err[line_table,6] = length(data_err_temp)
+  table_wilcox_test_err[line_table,7] = round(100*median(data_err_temp),1)
+  table_wilcox_test_err[line_table,8] = round(100*IQR(data_err_temp),1)
+  table_wilcox_test_err[line_table,9] = round(100*mean(data_err_temp),1)
+  table_wilcox_test_err[line_table,10] = round(100*sd(data_err_temp),1)
+  table_wilcox_test_err[line_table,11] = table_wilcox_test_err[line_table,8]/1.349
+}
+WriteXLS(table_wilcox_test_err,paste0(wd,"/ERRORS/","ERRORS_mass_distrib.xlsx"))
+
+
+#### 2.2 PLOT 2: EFFICIENCY BOXPLOTS BY EQUIP, DM AND OTHER VARS ####
 data_boxplot_eff = cbind.data.frame(data_efficiency$`ID separation`,
                                     data_efficiency$`Sep. Abbrev`,
                                     data_efficiency[,13:26])
@@ -199,15 +259,18 @@ colnames(data_boxplot_eff)[1:2]=c("ID","Sep._Abbrev")
 data_boxplot_eff_melt = melt(data_boxplot_eff, 
                              id.vars = c(1,2), 
                              measure.vars = 3:16)
-equip_greater_than = names(which(summary(data_boxplot_eff$Sep._Abbrev)>2))
+equip_greater_than = names(which(summary(data_boxplot_eff$Sep._Abbrev)>3))
+#equip_greater_than = equip_greater_than[-7]
 data_boxplot_eff_melt=data_boxplot_eff_melt[data_boxplot_eff_melt$Sep._Abbrev %in% equip_greater_than,]
 adapt_var1 = function(x) {return(substr(x,1,regexpr("_",x)-1))}
 adapt_var2 = function(x) {return(substr(x,regexpr("_",x)+1,nchar(as.character(x))))}
 data_boxplot_eff_melt=mutate(data_boxplot_eff_melt,variable1=adapt_var1(variable))
 data_boxplot_eff_melt=mutate(data_boxplot_eff_melt,variable2=adapt_var2(variable))
-data_boxplot_eff_melt$variable = factor(data_boxplot_eff_melt$variable, rev(unique(data_boxplot_eff_melt$variable)) )
+data_boxplot_eff_melt$variable = factor(data_boxplot_eff_melt$variable, unique(data_boxplot_eff_melt$variable) )
+data_boxplot_eff_melt$variable1 = factor(data_boxplot_eff_melt$variable1, unique(data_boxplot_eff_melt$variable1) )
+data_boxplot_eff_melt$variable2 = factor(data_boxplot_eff_melt$variable2, unique(data_boxplot_eff_melt$variable2) )
 
-plot=ggplot(data=data_boxplot_eff_melt, aes(x=variable2, y=value))+geom_boxplot(aes(fill=variable1))
+plot=ggplot(data=data_boxplot_eff_melt, aes(x=variable2, y=value))
 
 give.n <- function(x){
   return(c(y = 1.02*as.numeric(quantile(x,prob=0.75)), label = length(x)))}
@@ -216,6 +279,9 @@ mean.n <- function(x){
 
 pdf(paste0(wd,"/Initial_Boxplots/","Efficiency_singleplot.pdf"), width = 7, height = 4)
 plot(plot + 
+       geom_boxplot(aes(fill=variable1)) +
+       stat_summary(fun.data = give.n, geom = "text", aes(shape="Nb. of ind.",group=variable1), position=position_dodge(.9), fun.y = median,show.legend=FALSE, size=3 ) +
+       stat_summary(fun.y = mean, aes(shape="Mean",group=variable1), position=position_dodge(.9), colour = "black", geom="point") +
       facet_wrap(~Sep._Abbrev ,scales="free",nrow = 1, ncol = NULL) + #,labeller=labeller(.cols=labelsVAR))
       labs(title="Boxplots for sep. equip.",x="Eff. indicator",y="Values in different scale") +
       theme(plot.title = element_text(size = rel(1.5), colour = "black"),
@@ -223,58 +289,48 @@ plot(plot +
              legend.position="bottom",
              legend.direction="horizontal") + 
       guides(fill = guide_legend(nrow = 2)) +
-      stat_summary(fun.data = give.n, geom = "text", aes(shape="Nb. of ind."), fun.y = median,show.legend=FALSE, size=3 ) +
-      stat_summary(fun.data = mean.n, aes(shape="Mean"), colour = "black", geom="point") +
-      scale_shape_manual("", values=c("Mean"="x","Nb. of ind."="N"))
+      scale_shape_manual("", values=c("Mean"="x","Nb. of ind."="N")) +
+       theme_bw()
      #+ stat_summary(fun.data = mean.n, geom = "text", fun.y = mean, colour = "red")
 )
 dev.off()
-#### 1B.2 PLOT 2: EFFICIENCY BOXPLOTS BY EQUIP, OTHER VARS ####
 
 
-#### PLOT: GROUPS AND CHOICE OF EQUIPMENT ####
-data_equip_group = data_equip_group[order(data_equip_group$Equip),]
-data_equip_group = data_equip_group[order(data_equip_group$Group),]
-data_equip_group = data_equip_group[rev(1:nrow(data_equip_group)),]
 
-data_equip_group <- ddply(data_equip_group, "Group",
-                   transform, label_ypos=cumsum(N)-0.5*N)
-data_equip_group <- ddply(data_equip_group, "Group",
-                          transform, percent=round(100*N/sum(N),0))
-label_plotg=paste0("n=",data_equip_group$N,". ",data_equip_group$percent,"%")
 
-plot_equip = ggplot(data_equip_group, aes(x=Group, y=N,fill=Equip)) +
-geom_bar(stat="identity") +
-geom_text(aes(y=label_ypos, label=label_plotg), color="black", size=3.5) +
-  scale_fill_brewer(palette="Paired") +
-theme(legend.position="right")+
-  theme_minimal()
+#### 1.3 TESTING CORRELATIONS BETWEEN EFF1 and EFF2 ####
+data_eff_corr = cbind.data.frame(data_efficiency$`ID separation`,
+                                    data_efficiency$`Sep. Abbrev`,
+                                    data_efficiency[,13:26])
+colnames(data_eff_corr)[1:2]=c("ID","Sep._Abbrev")
 
-pdf(paste0(wd,"/Group_eff_equip.pdf"),width = 5.4, height = 5.4)
-print(plot_equip)
-dev.off()  
+effxy_DM = data_eff_corr[,3:4]
+effxy_VS = data_eff_corr[,5:6]
+effxy_TN = data_eff_corr[,7:8]
+effxy_TAN = data_eff_corr[,9:10]
+effxy_Norg = data_eff_corr[,11:12]
+effxy_P = data_eff_corr[,13:14]
+effxy_K = data_eff_corr[,15:16]
+list_effxy = list(effxy_DM,effxy_VS,effxy_TN,effxy_TAN,effxy_Norg,effxy_P,effxy_K)
+effxy_all = data.table::rbindlist(list_effxy)
+colnames(effxy_all)=c("Eff1","Eff2")
+list_effxy = list(effxy_all,effxy_DM,effxy_VS,effxy_TN,effxy_TAN,effxy_Norg,effxy_P,effxy_K)
 
-#### PLOT: FEED AND CHOICE OF EQUIPMENT ####
-data_feed_group = data_feed_group[order(data_feed_group$Feed),]
-data_feed_group = data_feed_group[order(data_feed_group$Group),]
-data_feed_group = data_feed_group[rev(1:nrow(data_feed_group)),]
+for (i in 1:length(list_effxy)) {
+  data_xytemp=list_effxy[[i]]
+  if (i == 1){
+    data_eff_lincorr = lm_eqn_bydataframe(data_xytemp,data_xytemp[,1],data_xytemp[,2])
+    rownames(data_eff_lincorr)="all"
+  }
+  if (i > 1) {
+    data_eff_lincorr = rbind(data_eff_lincorr,lm_eqn_bydataframe(data_xytemp,data_xytemp[,1],data_xytemp[,2]))
+    rownames(data_eff_lincorr)[i]=paste0(colnames(data_eff_corr)[2*i-1],",",colnames(data_eff_corr)[2*i])
+  }
+}
 
-data_feed_group <- ddply(data_feed_group, "Group",
-                          transform, label_ypos=cumsum(N)-0.5*N)
-data_feed_group <- ddply(data_feed_group, "Group",
-                          transform, percent=round(100*N/sum(N),0))
-label_plotg=paste0("n=",data_feed_group$N,". ",data_feed_group$percent,"%")
+#data_eff_lincorr=mutate(data_eff_lincorr,pSF1=(1+1/b))
+#data_eff_lincorr=mutate(data_eff_lincorr,pSF2 =(1+1/(a-1)))
 
-plot_feed = ggplot(data_feed_group, aes(x=Group, y=N,fill=Feed)) +
-  geom_bar(stat="identity") +
-  geom_text(aes(y=label_ypos, label=label_plotg), color="black", size=3.5) +
-  scale_fill_brewer(palette="Paired") +
-  theme(legend.position="right")+
-  theme_minimal()
-
-pdf(paste0(wd,"/Group_eff_feed.pdf"),width = 5.4, height = 5.4)
-print(plot_feed)
-dev.off() 
 ##### 1. STATISTICS ####
 #### 1.1 CORRELATION MATRIX ####
 #### 1.1.1 Preparing data ####
@@ -347,13 +403,26 @@ dev.off()
 
 #### 1.2 DETERMINING EQUIPMENT GROUPS ####
 #### 1.2.1 PLOT 3: Histograms of efficiency ####
-data_hist=data.frame("1-TSliq/TSraw"=data_sep_raw$`1-Tsliq/Tsraw`,"DM to SF"=data_sep_raw$DM_to_SF)
-colnames(data_hist)=c("1-TSliq/TSraw","DM to SF")
+data_hist=data.frame("Eff1,DM"=data_sep_raw$Eff1,"Eff2,DM"=data_sep_raw$Eff2)
 data_hist=melt(data_hist)
-eff1 = data_hist[data_hist$variable=="1-TSliq/TSraw",]
-eff2 = data_hist[data_hist$variable=="DM to SF",]
-# 1.2.1.1 PLOTS ####
-pdf(paste0(wd,"/Efficiency_histogram/","Histogram_1-TS.TS.pdf"))
+eff1 = data_hist[data_hist$variable=="Eff1.DM",]
+eff2 = data_hist[data_hist$variable=="Eff2.DM",]
+den1=density(eff1$value)
+den2=density(eff2$value)
+den1min = data.frame(x=den1$x,y=den1$y)
+den2min = data.frame(x=den2$x,y=den2$y)
+range1=c(0.4,0.6)
+range2=c(0.5,0.75)
+den1minred = den1min[(den1min < range1[2] & den1min > range1[1] ),]
+den2minred = den2min[(den2min < range2[2] & den2min > range2[1] ),]
+den1min_y = min(den1minred[,2],na.rm = T)
+den2min_y = min(den2minred[,2],na.rm = T)
+den1min_x = den1minred$x[which(den1minred$y == den1min_y)]
+den2min_x = den2minred$x[which(den2minred$y == den2min_y)]
+vlines=data.frame(Var=c(paste0("x=",round(den1min_x,2)),paste0("x=",round(den2min_x,2))),xmin = c(den1min_x,den2min_x),ymin=c(den1min_y,den2min_y))
+colnames(vlines)[1]="Vert. lines"
+# 1.2.1.1 PLOTS ###
+pdf(paste0(wd,"/Efficiency_histogram/","Histogram_Eff1.pdf"))
 ggplot(eff1, aes(value, fill = variable)) + geom_histogram(col="black", alpha = 0.5)+
 labs(title = "Separation efficiency histogram",x="1 - TSliq/TSraw", y="Count")
 dev.off()
@@ -373,115 +442,244 @@ dev.off()
 
 pdf(paste0(wd,"/Efficiency_histogram/","Density_overlapped.pdf"))
 ggplot(data_hist, aes(value, fill = variable)) + geom_density(alpha = 0.2) +
-  labs(title = "Separation efficiency densities",x="Value", y="Density")
+  labs(title = "Separation efficiency densities",x="Value", y="Density") +
+  geom_vline(data=vlines,aes(xintercept=xmin, colour=`Vert. lines`, linetype=`Vert. lines`),
+             alpha = 0.8,size=1)+
+  scale_fill_discrete(name="Density \n\ curves") +
+  theme_bw()
+
 dev.off()
 
 
 
-
-### testing significance of groups ###
-funct_eff = function(x) {
+#### Testing significance of groups ####
+funct_eff = function(x,limit) {
   (if (is.na(x)) { result=NA 
-  } else if (x > 0.5) {
+  } else if (x > limit) {
     result="High"
   } else {
     result="Low" } )
   return(result) 
-}    ## CREATED FOR "1 - TS/TS"
-groups = apply(matrix(as.numeric(data_sep_raw$`1-Tsliq/Tsraw`)),1,funct_eff)
-data_groups = data.frame(value=data_sep_raw$`1-Tsliq/Tsraw`,group=groups)
-#data_groups = data_groups[-56,]
+}    
+## Comparing mean and sd of groups through eff1 or eff2 ####
+groups_eff1 = apply(matrix(as.numeric(data_sep_raw$Eff1)),1, function(x) funct_eff(x,limit=0.5370558))
+groups_eff2 = apply(matrix(as.numeric(data_sep_raw$Eff2)),1, function(x) funct_eff(x,limit=0.6197546))
 
-# 1.2.1.2 t-test  of groups ####
+data_groups_eff1 = data.frame(value=data_sep_raw$Eff1,group=groups_eff1)
+data_groups_eff2 = data.frame(value=data_sep_raw$Eff2,group=groups_eff2)
+
+mean_eff1groups=ddply(.data = data_groups_eff1, ~group, summarize, mean_eff1=mean(value))
+mean_eff2groups=ddply(.data = data_groups_eff2, ~group, summarize, mean_eff2=mean(value))
+sd_eff1groups=ddply(.data = data_groups_eff1, ~group, summarize, sd_eff1=sd(value))
+sd_eff2groups=ddply(.data = data_groups_eff2, ~group, summarize, sd_eff2=sd(value))
+
+summary_eff1groups = cbind(mean_eff1groups,sd_eff1=sd_eff1groups[,2])
+summary_eff2groups = cbind(mean_eff2groups,sd_eff2=sd_eff2groups[,2])
+summary_eff12_groups = cbind(summary_eff1groups,summary_eff2groups[2:3])
+
+index_exclude_ID_eff1eff2 = which(!(groups_eff1==groups_eff2))
+
+WriteXLS(summary_eff12_groups,paste0(wd,"/Efficiency_histogram/","Eff_groups_means_sd.xlsx"))
+
+groups_eff12 = groups_eff1[-index_exclude_ID_eff1eff2]
+
+data_groups = data.frame(value_eff1=data_sep_raw$Eff1[-index_exclude_ID_eff1eff2],value_eff2=data_sep_raw$Eff2[-index_exclude_ID_eff1eff2],group=groups_eff12)
+
+# 1.2.1.2 t-test  of groups ###
 # first verifying normality #
-ddply(.data = data_groups, ~group, summarize, mean=mean(value))
-data_low = data_groups[data_groups$group == "Low",]$value
-data_high = data_groups[data_groups$group == "High",]$value
-shapiro_low_eff = shapiro.test(data_low)
-shapiro_high_eff = shapiro.test(data_high)
-hist(data_low)
-hist(data_high)
+
+for (i in 1:2){
+print(i)
+  data_low_eff = as.numeric(data_groups[data_groups$group == "Low",][[i]])
+data_high_eff = data_groups[data_groups$group == "High",][[i]]
+shapiro_low_eff = shapiro.test(data_low_eff)
+print(shapiro_low_eff)
+shapiro_high_eff = shapiro.test(data_high_eff)
+print(shapiro_high_eff)
+hist(data_low_eff)
+hist(data_high_eff)
+
 # t-test and wilcox test
-var.test(data_low,data_high) #pv > 0.05 -> can assume homogenous variances
-t_test_groups = t.test(data_low,data_high)
-wilcox.test(data_low,data_high)
+print(var.test(data_low_eff,data_high_eff)) #pv > 0.05 -> can assume homogenous variances
+t_test_groups = t.test(data_low_eff,data_high_eff)
+print(t_test_groups)
+print(wilcox.test(data_low_eff,data_high_eff))
 # ANOVA
-groups_model = lm(formula = value ~ group, data = data_groups)
-summary(groups_model)
-anova(groups_model)
-confint(groups_model)
+#groups_model_eff = lm(formula = value_eff ~ group, data = data_groups_eff1)
+#summary(groups_model_eff1)
+#anova(groups_model_eff1)
+#confint(groups_model_eff1)
+}
+
 
 #como ler: 
 # 1) se o p-value > 0.15, nao invalida que o modelo nao é normal: pvalue do ttest pode ser usado
 # 2) p < 0.10; teste de adequaçao invalida o modelo normal: atençao ao usar o pv do ttest
 # 3) entre 0.10 e 0.15 (caso do exemplo): zona de perigo, melhor usar outro teste
 
-#### 1.2.2 PLOT 4: MASS BALANCES FOR EFFICIENCY GROPS ####
-## in the same loop as plot 1 ###
 
+#### 2.1 Overal distribution ####
+# it's necessary to transform into a factor to keep original order in plots #
 
-#### ERRORS ON MASS BALANCES ####
-data_errors_melt=melt(data_errors,id.vars = c("ID","Eff_group"))
-selected_err_var = c("VS","TN","TAN","P","K")
-data_errors_melt=data_errors_melt[data_errors_melt$variable %in% selected_err_var,]
-
-plot_errors=ggplot(data=data_errors_melt, 
-                   aes(x=variable, y=value))+ geom_boxplot()+#geom_dotplot(binaxis = "y",stackdir = "center") +
-  labs(title="Boxplots for mass balance errors",x="Variable",y="Errors") +
-  stat_summary(fun.data = mean.n, aes(shape="Mean"), colour = "black", geom="point") +
-  scale_shape_manual("", values=c("Mean"="x","Nb. of ind."="N")) +
-  geom_hline(yintercept=0.1, color="red") +
-  geom_hline(yintercept=-0.1, color="red") +
-  theme(legend.position = "bottom")
-
-pdf(paste0(wd,"/ERRORS/","ERRORS_singleplot.pdf"), width = 7, height = 4)
-plot(plot_errors)
-dev.off()
-
-#TESTANDO SE MEDIA ERROS SIGNIF MAIOR OU MENOR QUE QUE 0 #
-for (j in 1:length(selected_err_var)) {
-  if (j == 1) {
-  table_wilcox_test_err = data.frame(0,0,0,0,0,0)
-  colnames(table_wilcox_test_err)=c("Var","Option","PV (Wilcox)","N","mean (%)","SD (%)")
-  }
-  i = selected_err_var[j]
-  print(i)
-  line_table = nrow(table_wilcox_test_err)
-  if (j > 1) {line_table = line_table+1}
-  table_wilcox_test_err[line_table,1] = i
-  table_wilcox_test_err[line_table+1,1] = i
-  table_wilcox_test_err[line_table+2,1] = i
+for (i in 1:length(list_distrib_data)) {
+  data_distrib = as.data.frame(list_distrib_data[[i]])
+  name_data_distrib = names(list_distrib_data)[i]
   
-  table_wilcox_test_err[line_table,2] = "Diff."
-   table_wilcox_test_err[line_table+1,2] = "Greater"
-  table_wilcox_test_err[line_table+2,2] = "Less"
-  data_err_temp = data_errors_melt[data_errors_melt$variable == i,4]
-  data_err_temp = data_err_temp[!is.na(data_err_temp)]
   
-  wilcoxtest_err_diff = wilcox.test(data_err_temp, mu = 0) #2sided is default
-  wilcoxtest_err_greater = wilcox.test(data_err_temp, mu = 0, alternative= "greater")
- # print(wilcoxtest_err_greater)
-  wilcoxtest_err_less = wilcox.test(data_err_temp, mu = 0, alternative = "less")
- # print(wilcoxtest_err_less)
-  table_wilcox_test_err[line_table,3] = round(wilcoxtest_err_diff$p.value,3)
-  table_wilcox_test_err[line_table+1,3] = round(wilcoxtest_err_greater$p.value,3)
-  table_wilcox_test_err[line_table+2,3] = round(wilcoxtest_err_less$p.value,3)
-  table_wilcox_test_err[line_table,4] = length(data_err_temp)
-  table_wilcox_test_err[line_table,5] = round(100*mean(data_err_temp),1)
-  table_wilcox_test_err[line_table,6] = round(100*sd(data_err_temp),1)
-  }
-WriteXLS(table_wilcox_test_err,paste0(wd,"/ERRORS/","ERRORS_singleplot.xlsx"))
+  data_distrib_melt = melt(data_distrib, id = colnames(data_distrib)[1:4] )
+  data_distrib_melt$value = 100*data_distrib_melt$value
+  data_distrib_melt$Variable = factor(data_distrib_melt$Variable, rev(unique(data_distrib_melt$Variable)) )
+  
+  data_distrib_SF_av = data_distrib_melt[data_distrib_melt$variable == "SF av.",]
+  data_distrib_SF_up = data_distrib_SF_av$value + data_distrib_melt[data_distrib_melt$variable == "SF sd",]$value
+  data_distrib_SF_low = data_distrib_SF_av$value - data_distrib_melt[data_distrib_melt$variable == "SF sd",]$value
+  data_distrib_SF_min = data_distrib_melt[data_distrib_melt$variable == "SF min",]$value
+  data_distrib_SF_max = data_distrib_melt[data_distrib_melt$variable == "SF max",]$value
+  
+  data_distrib_LF_av = data_distrib_melt[data_distrib_melt$variable == "LF av.",]
+  data_distrib_LF_up = data_distrib_LF_av$value + data_distrib_melt[data_distrib_melt$variable == "LF sd",]$value
+  data_distrib_LF_low = data_distrib_LF_av$value - data_distrib_melt[data_distrib_melt$variable == "LF sd",]$value
+  data_distrib_LF_min = data_distrib_melt[data_distrib_melt$variable == "LF min",]$value
+  data_distrib_LF_max= data_distrib_melt[data_distrib_melt$variable == "LF max",]$value
+  
+  #### 1A.1 PLOT 1 (+PLOT 4) : OVERALL MASS BALANCES (AND BY EFF GROUPS) ####
+  pdf(paste0(wd,"/Mass_distribution/",name_data_distrib,"_eff_mass_balance.pdf"))
+  print(
+    ggplot(data=data_distrib_melt, 
+           aes(x = Variable, y = value, fill = variable)) + 
+      geom_bar(data = data_distrib_SF_av, colour= "black",
+               stat = "identity",
+               position = "identity") +
+      geom_bar(data = data_distrib_LF_av, colour= "black",
+               stat = "identity",
+               position = "identity",
+               mapping = aes(y = -value)) +
+      geom_errorbar(data = data_distrib_LF_av,
+                    mapping = aes(y = -data_distrib_LF_av$value,
+                                  ymin = -data_distrib_LF_low,
+                                  ymax = -data_distrib_LF_up)) +
+      geom_errorbar(data = data_distrib_SF_av,
+                    mapping = aes(y = data_distrib_SF_av$value,
+                                  ymin = data_distrib_SF_low,
+                                  ymax = data_distrib_SF_up)) +
+      geom_text(data = data_distrib_SF_av, label= data_distrib_SF_av$n,
+                mapping = aes (y = rep(99,nrow(data_distrib)))) +
+      geom_text(data = data_distrib_LF_av, label= round(data_distrib_LF_av$value,0),
+                mapping = aes (y = -0.5*data_distrib_LF_av$value), color = "white") +
+      geom_text(data = data_distrib_SF_av, label= round(data_distrib_SF_av$value,0),
+                mapping = aes (y = 0.5*data_distrib_SF_av$value), color = "white") +
+      geom_segment(data=data_distrib_SF_av,
+                mapping = aes(x=as.numeric(Variable)-0.45,xend=as.numeric(Variable)+0.45,
+                              y=data_distrib_SF_min, yend=data_distrib_SF_min,
+                              linetype="Min.",color="Min."),size=0.8) +
+      geom_segment(data=data_distrib_SF_av,
+                   mapping = aes(x=as.numeric(Variable)-0.45,xend=as.numeric(Variable)+0.45,
+                                 y=data_distrib_SF_max, yend=data_distrib_SF_max,
+                                 linetype="Max.",color="Max."),size=0.8) +
+      geom_segment(data=data_distrib_SF_av,
+                   mapping = aes(x=as.numeric(Variable)-0.45,xend=as.numeric(Variable)+0.45,
+                                 y=-data_distrib_LF_min, yend=-data_distrib_LF_min,
+                                 linetype="Min.",color="Min."),size=0.8) +
+      geom_segment(data=data_distrib_SF_av,
+                   mapping = aes(x=as.numeric(Variable)-0.45,xend=as.numeric(Variable)+0.45,
+                                 y=-data_distrib_LF_max, yend=-data_distrib_LF_max,
+                                 linetype="Max.",color="Max."),size=0.8) +
+      scale_color_manual(values=c("Red","Green")) +
+      #geom_point(data=data_distrib_LF_min, aes(y=data_distrib_SF_min,shape="Min. and max."),size=3)+
+       # scale_shape_manual(values="red") +
+      coord_flip() +
+      scale_y_continuous(labels = abs, limits = c(-100,100)) +
+      scale_fill_manual(labels = c("Liquid \n\ Fraction.","Solid \n\ Fraction"),values = c("#6fb3ca","#ca866f")) + 
+      labs(title = paste0("Mass balance. Efficiency group: ",name_data_distrib),
+           y="Distribution (%)", x="Variable", fill="Fraction")+
+      theme_bw()
+  )
+  dev.off()
+}
 
-#### 1.2.3 PLOT 5: PCA OF SEPARATION EFFICIENCY ####
+#### PLOT: GROUPS AND CHOICE OF EQUIPMENT ####
+data_equip_group_plot = as.data.frame(table(data_equip_group))
+data_equip_group_plot=data_equip_group_plot[which(data_equip_group_plot$Freq != 0),]
+data_equip_group_plot$Eff_group = factor(data_equip_group_plot$Eff_group, levels = c("Low","High","Inconsistent"))
+
+data_equip_group_plot = data_equip_group_plot[order(data_equip_group_plot$Sep.Abbrev),]
+data_equip_group_plot = data_equip_group_plot[order(data_equip_group_plot$Eff_group),]
+data_equip_group_plot = data_equip_group_plot[rev(1:nrow(data_equip_group_plot)),]
+
+data_equip_group_plot <- ddply(data_equip_group_plot, "Eff_group",
+                          transform, label_ypos=cumsum(Freq)-0.5*Freq)
+data_equip_group_plot <- ddply(data_equip_group_plot, "Eff_group",
+                          transform, percent=round(100*Freq/sum(Freq),0))
+data_equip_group_plot$label_plotg=paste0("n=",data_equip_group_plot$Freq,". ",data_equip_group_plot$percent,"%")
+
+colnames(data_equip_group_plot)[1:3] = c("Sep. Equipment","Efficiency category","N. observations")
+
+plot_equip = ggplot(data_equip_group_plot, aes(x=`Efficiency category`, y=`N. observations`,fill=`Sep. Equipment`)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(y=label_ypos, label=label_plotg), color="black", size=3.5) +
+  scale_fill_brewer(palette="Paired")+  #, guide=F) + #TO REMOVE THE LEGEND FROM PLOT!!
+  theme_bw() +
+  theme(legend.position="bottom")
+
+pdf(paste0(wd,"/Group_eff_equip.pdf"),width = 5.4, height = 5.4)
+print(plot_equip)
+dev.off()  
+
+#### PLOT: FEED AND CHOICE OF EQUIPMENT ####
+
+data_feed_group_plot = data.frame(table(data_feed_group))
+data_feed_group_plot=data_feed_group_plot[which(data_feed_group_plot$Freq != 0),]
+data_feed_group_plot$Group = factor(data_feed_group_plot$Group, levels = c("Low","High","Inconsistent"))
+
+data_feed_group_plot = data_feed_group_plot[order(data_feed_group_plot$Feed),]
+data_feed_group_plot = data_feed_group_plot[order(data_feed_group_plot$Group),]
+data_feed_group_plot = data_feed_group_plot[rev(1:nrow(data_feed_group_plot)),]
+
+
+colnames(data_feed_group_plot)[3]="N"
+data_feed_group_plot <- ddply(data_feed_group_plot, "Group",
+                         transform, label_ypos=cumsum(N)-0.5*N)
+data_feed_group_plot <- ddply(data_feed_group_plot, "Group",
+                         transform, percent=round(100*N/sum(N),0))
+data_feed_group_plot$label_plotg=paste0("n=",data_feed_group_plot$N,". ",data_feed_group_plot$percent,"%")
+
+
+colnames(data_feed_group_plot)[1:3] = c("Efficiency category","Anaerobic digestion \n\ feedstock","N. observations")
+
+plot_feed = ggplot(data_feed_group_plot, 
+                   aes(x=`Efficiency category`, 
+                       y=`N. observations`,fill=`Anaerobic digestion \n\ feedstock`)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(y=label_ypos, 
+                label=data_feed_group_plot$label_plotg), 
+                color="black", size=3.5) +
+  scale_fill_brewer(palette="Paired")+#, guide=F) + #TO REMOVE THE LEGEND FROM PLOT!!
+  theme_bw() +
+  theme(legend.position="bottom")
+  
+
+pdf(paste0(wd,"/Group_eff_feed.pdf"),width = 5.4, height = 5.4)
+print(plot_feed)
+dev.off() 
+
+pdf(paste0(wd,"/Group_eff_feed NO LEGEND.pdf"),width = 5.4, height = 5.4)
+print(plot_feed_nolegend)
+dev.off() 
+#### 1.2.3 PLOT: PCA OF SEPARATION EFFICIENCY ####
 # estimating ncp and replacing NA
 
 
 for (i in 1:length(list_PCA_data)) {
 data_PCA = as.data.frame(list_PCA_data[[i]])
 name_data_PCA = names(list_PCA_data)[i]
-data_PCA_numeric = data_PCA[,-1:-3]
+data_PCA_numeric = data_PCA[,10:ncol(data_PCA)]
 data_PCA_numeric = sapply(data_PCA_numeric, as.numeric)
-groups_temp = apply(matrix(as.numeric(data_PCA$`1-Tsliq/Tsraw`)),1,funct_eff)
+NNA=2
+data_PCA=data_PCA[which(rowSums(is.na(data_PCA_numeric))<=NNA),]
+data_PCA_numeric=data_PCA_numeric[which(rowSums(is.na(data_PCA_numeric))<=NNA),]
+
+sapply(data_PCA_numeric, class)
+#groups_temp = apply(matrix(as.numeric(data_PCA$`1-Tsliq/Tsraw`)),1,funct_eff)
 
 #nb=estim_ncpPCA(as.matrix(data_PCA_numeric), scale=TRUE, method.cv = "Kfold")    #estimation of ncp (=nb$ncp)
 dataPCA_complete=imputePCA(as.matrix(data_PCA_numeric), ncp=5)
@@ -497,9 +695,9 @@ PC1corr=as.data.frame(PCcorr$Dim.1$quanti)
 PC2corr=as.data.frame(PCcorr$Dim.2$quanti)
 PC3corr=as.data.frame(PCcorr$Dim.3$quanti)
 aka=as.data.frame(PCA_separation$ind$coord)
-write_PCA_data=c(name_data_PCA,"dataPCA_complete_obs","eigenvalues","loading_matrix","PC1corr","PC2corr","PC3corr","aka")
+write_PCA_data=c("data_PCA","dataPCA_complete_obs","eigenvalues","loading_matrix","PC1corr","PC2corr","PC3corr","aka")
 WriteXLS(write_PCA_data, 
-         ExcelFileName = paste(wd,"/PCA/",name_data_PCA,"_output_data.xls",sep=""), 
+         ExcelFileName = paste0(wd,"/PCA/",name_data_PCA,"_output_data.xls",sep=""), 
          SheetNames = write_PCA_data, perl = "perl",
          verbose = FALSE, Encoding = c("UTF-8", "latin1", "cp1252"),
          row.names = TRUE, col.names = TRUE,
@@ -529,7 +727,7 @@ dev.off()
 pdf(paste0(wd,"/PCA/",name_data_PCA,"_biplotPC13_group_efficiency.pdf"))
 print(fviz_pca_biplot(PCA_separation, label="var", 
                       axes = c(1,3), #choose PC
-                      habillage=as.factor(groups_temp),
+                      habillage=as.factor(data_PCA$`Sep. Abbrev`),
                       addEllipses=T, ellipse.level=0.95, repel = T)
       
       #+ geom_text_repel(aes(x=PCA_separation$ind$coord[,1], 
